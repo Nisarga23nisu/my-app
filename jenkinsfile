@@ -12,7 +12,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/charanravir/getting-started-app.git'
+                git branch: 'main', url: 'https://github.com/Nisarga23nisu/my-app.git'
             }
         }
 

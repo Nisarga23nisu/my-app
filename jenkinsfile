@@ -1,44 +1,128 @@
-node {
-   def mvnHome = tool 'M3'
+pipeline {
+  
+  environment {
+    GIT_URL_ART = "github.com/Greeshma594/build-artifactory.git"
+	DOCKER_URL = "greeshma594/java-project:latest"
+	EMAIL = "nisargamk9@gmail.com"
+	NAME = "Nisarga"
+	}
+	
+	tools {
+        maven 'Maven3' 
+        git 'Default'
+    }
+	
+  agent { label 'node1' }
+  
+     stages {
+     
+	 stage('Clone Repositories') {
+            steps {
+                script {
+                    
+                    git branch: 'master',
+                        url: 'https://github.com/Greeshma594/java-war.git',
+                        credentialsId: '435ca4da-a48e-468e-bc38-a506e51ffdca'
 
-   stage('Checkout Code') { 
-      git 'https://github.com/maping/java-maven-calculator-web-app.git'
-   }
-   stage('JUnit Test') {
-      if (isUnix()) {
-         sh "'${mvnHome}/bin/mvn' clean test"
-      } else {
-         bat(/"${mvnHome}\bin\mvn" clean test/)
-      }
-   }
-   stage('Integration Test') {
-      if (isUnix()) {
-         sh "'${mvnHome}/bin/mvn' integration-test"
-      } else {
-         bat(/"${mvnHome}\bin\mvn" integration-test/)
-      }
-   }
- /*
-   stage('Performance Test') {
-      if (isUnix()) {
-         sh "'${mvnHome}/bin/mvn' cargo:start verify cargo:stop"
-      } else {
-         bat(/"${mvnHome}\bin\mvn" cargo:start verify cargo:stop/)
-      }
-   }
-  */
-  stage('Performance Test') {
-      if (isUnix()) {
-         sh "'${mvnHome}/bin/mvn' verify"
-      } else {
-         bat(/"${mvnHome}\bin\mvn" verify/)
-      }
-   }
-   stage('Deploy') {
-      timeout(time: 10, unit: 'MINUTES') {
-           input message: 'Deploy this web app to production ?'
-      }
-      echo 'Deploy...'
-   }
-}
-   
+                    
+				    }
+				
+            }
+        }
+		
+	 stage ('BUILD'){
+	 
+	   steps {
+	     script {
+	       
+             dir('app'){
+		     sh 'cd /home/ubuntu/workspace/workspace/java-project/app'
+		     sh 'mvn clean install'
+		     sh 'cp -R /home/ubuntu/workspace/workspace/java-project/app/ /home/ubuntu/workspace/workspace/java-project/build/'
+             }
+	     }
+		}
+	}
+		  
+	 stage ('PUSH TO ARTIFACTORY') {
+	 
+	   steps {
+	      withCredentials([usernamePassword(credentialsId: 
+'435ca4da-a48e-468e-bc38-a506e51ffdca', usernameVariable: 'GIT_USR', passwordVariable: 
+'GIT_PSW')]){ 
+	      script {
+	          git branch: 'main',
+                        url: 'https://github.com/Greeshma594/build-artifactory.git',
+                        credentialsId: '435ca4da-a48e-468e-bc38-a506e51ffdca'
+	      
+		 
+	      sh '''
+		  cp -R /home/ubuntu/workspace/workspace/java-project/build/target /home/ubuntu/workspace/workspace/java-project/build-artifactory/
+		  git config --global user.email "${EMAIL}"
+          git config --global user.name "${NAME}"
+		  git add *
+		  git commit -m "war-file" || echo "No changes to commit" 
+		  git push https://${GIT_USR}:${GIT_PSW}@${GIT_URL_ART}
+		  '''
+	      }
+	      }
+		  }
+		  }
+		  
+		  
+	 stage ('DOCKER_IMAGES') {
+	 
+	   steps {
+	    withCredentials([usernamePassword(credentialsId: 
+'docker_cred', usernameVariable: 'DOCKER_USR', passwordVariable: 
+'DOCKER_PSW')]){ 
+	      
+		script {
+		  
+		   git branch: 'main',
+                        url: 'https://github.com/Greeshma594/docker_java_project.git',
+                        credentialsId: '435ca4da-a48e-468e-bc38-a506e51ffdca'
+		 
+		  dir('build-artifactory'){
+		      git branch: 'main',
+                        url: 'https://github.com/Greeshma594/build-artifactory.git',
+                        credentialsId: '435ca4da-a48e-468e-bc38-a506e51ffdca'
+		  
+		 
+	      sh '''
+	      cd /home/ubuntu/workspace/workspace/java-project/
+		  sudo chmod 777 docker_install.sh
+		  ./docker_install.sh
+		  docker build --no-cache -t hello_world:latest .
+		  echo $DOCKER_PSW | docker login -u $DOCKER_USR --password-stdin
+		  docker tag hello_world:latest ${DOCKER_URL}
+		  docker push "$DOCKER_URL"
+		  '''
+		  }
+		  }
+		  
+		  }
+	      }
+		  }
+		  
+	 stage ('DEPLOY') {
+	 
+	 agent {label 'node1'}
+	   steps {
+	    
+
+		  sh '''
+		  ssh -o StrictHostKeyChecking=no ubuntu@10.0.0.8 <<EOF
+sudo usermod -aG docker jenkins
+sudo apt update -y
+docker pull greeshma594/java-project:latest
+docker rm -f java_cont
+docker run -it -d --name java_cont -p 8081:8080 greeshma594/java-project:latest
+EOF
+		  '''
+
+		  }
+		  }
+		  
+		  }
+		  }
